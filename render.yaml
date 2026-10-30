@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: facesense-ai
+    env: docker
+    dockerfilePath: Dockerfile
+    plan: free
+    region: oregon
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: DATABASE_URL
+        value: sqlite:///./facesense.db

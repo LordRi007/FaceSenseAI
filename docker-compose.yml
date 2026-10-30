@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  facesense-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: facesense-ai
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - DATABASE_URL=sqlite:///./facesense.db
+    volumes:
+      - facesense_storage:/app/backend/storage
+
+volumes:
+  facesense_storage:
