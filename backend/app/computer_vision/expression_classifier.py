@@ -44,52 +44,54 @@ class FacialExpressionClassifier:
             # MediaPipe FACS Blendshapes
             b = blendshapes
 
-            # 1. Happy
+            # 1. Happy (AU12 Lip Corner Puller + AU6 Cheek Raiser)
             smile_avg = (b.get("mouthSmileLeft", 0.0) + b.get("mouthSmileRight", 0.0)) / 2.0
             cheek_avg = (b.get("cheekSquintLeft", 0.0) + b.get("cheekSquintRight", 0.0)) / 2.0
             mouth_dimple = (b.get("mouthDimpleLeft", 0.0) + b.get("mouthDimpleRight", 0.0)) / 2.0
-            happy_score = (smile_avg * 2.8) + (cheek_avg * 0.8) + (mouth_dimple * 0.4)
-            if happy_score > 0.15:
-                scores["Happy"] += happy_score * 2.2
-                scores["Neutral"] *= max(0.1, 1.0 - happy_score * 1.5)
+            happy_score = (smile_avg * 3.0) + (cheek_avg * 1.0) + (mouth_dimple * 0.4)
+            if smile_avg > 0.14 or happy_score > 0.22:
+                scores["Happy"] += happy_score * 2.5
+                scores["Neutral"] *= max(0.05, 1.0 - happy_score * 1.8)
 
-            # 2. Surprised
+            # 2. Surprised (AU26 Jaw Drop + AU1/AU2 Brow Raiser + AU5 Eye Widener)
             jaw_open = b.get("jawOpen", 0.0)
             brow_inner_up = b.get("browInnerUp", 0.0)
             eye_wide = (b.get("eyeWideLeft", 0.0) + b.get("eyeWideRight", 0.0)) / 2.0
             surprise_score = (jaw_open * 1.8) + (brow_inner_up * 1.5) + (eye_wide * 1.2)
-            if surprise_score > 0.20:
+            if jaw_open > 0.22 and (brow_inner_up > 0.18 or eye_wide > 0.18):
                 scores["Surprised"] += surprise_score * 2.0
                 scores["Neutral"] *= max(0.1, 1.0 - surprise_score * 1.3)
 
-            # 3. Angry
+            # 3. Angry (FACS AU4 Brow Lowerer REQUIRED + AU9 Nose Wrinkler / AU23 Lip Press)
+            # Dark glasses frames and hair can cast shadows on eyebrows; genuine anger requires true brow lowering
             brow_down = (b.get("browDownLeft", 0.0) + b.get("browDownRight", 0.0)) / 2.0
             nose_sneer = (b.get("noseSneerLeft", 0.0) + b.get("noseSneerRight", 0.0)) / 2.0
-            mouth_pucker = b.get("mouthPucker", 0.0)
+            mouth_press = (b.get("mouthPressLeft", 0.0) + b.get("mouthPressRight", 0.0)) / 2.0
             eye_squint = (b.get("eyeSquintLeft", 0.0) + b.get("eyeSquintRight", 0.0)) / 2.0
-            angry_score = (brow_down * 2.5) + (nose_sneer * 0.8) + (mouth_pucker * 0.5) + (eye_squint * 0.4)
-            if angry_score > 0.18:
+            angry_score = (brow_down * 2.8) + (nose_sneer * 1.5) + (mouth_press * 0.8) + (eye_squint * 0.4)
+            # Must have significant brow-down (AU4) or nose sneer (AU9) to prevent neutral resting faces with glasses from false triggering
+            if (brow_down > 0.24 or nose_sneer > 0.26) and angry_score > 0.40:
                 scores["Angry"] += angry_score * 2.0
-                scores["Neutral"] *= max(0.1, 1.0 - angry_score * 1.3)
+                scores["Neutral"] *= max(0.1, 1.0 - angry_score * 1.4)
 
-            # 4. Sad
+            # 4. Sad (AU15 Lip Corner Depressor + AU1 Inner Brow Raiser)
             mouth_frown = (b.get("mouthFrownLeft", 0.0) + b.get("mouthFrownRight", 0.0)) / 2.0
             mouth_stretch = (b.get("mouthStretchLeft", 0.0) + b.get("mouthStretchRight", 0.0)) / 2.0
-            sad_score = (mouth_frown * 2.2) + (brow_inner_up * 0.9) + (mouth_stretch * 0.4)
-            if sad_score > 0.15 and smile_avg < 0.1:
+            sad_score = (mouth_frown * 2.5) + (brow_inner_up * 0.8) + (mouth_stretch * 0.4)
+            if mouth_frown > 0.20 and smile_avg < 0.10:
                 scores["Sad"] += sad_score * 2.0
                 scores["Neutral"] *= max(0.1, 1.0 - sad_score * 1.2)
 
-            # 5. Fearful
-            fear_score = (eye_wide * 1.8) + (brow_inner_up * 1.4) + (jaw_open * 0.8) + (mouth_stretch * 0.6)
-            if fear_score > 0.22 and smile_avg < 0.15:
-                scores["Fearful"] += fear_score * 1.8
+            # 5. Fearful (AU1+AU2 Brow Raiser + AU5 Eye Widener + AU20 Lip Stretcher)
+            fear_score = (eye_wide * 2.0) + (brow_inner_up * 1.4) + (jaw_open * 0.8) + (mouth_stretch * 0.6)
+            if eye_wide > 0.25 and brow_inner_up > 0.20 and smile_avg < 0.12:
+                scores["Fearful"] += fear_score * 2.0
                 scores["Neutral"] *= max(0.1, 1.0 - fear_score * 1.2)
 
-            # 6. Disgusted
+            # 6. Disgusted (AU9 Nose Wrinkler + AU10 Upper Lip Raiser)
             mouth_upper_up = (b.get("mouthUpperUpLeft", 0.0) + b.get("mouthUpperUpRight", 0.0)) / 2.0
-            disgust_score = (nose_sneer * 2.4) + (mouth_upper_up * 1.5) + (eye_squint * 0.6)
-            if disgust_score > 0.15:
+            disgust_score = (nose_sneer * 2.6) + (mouth_upper_up * 1.8) + (eye_squint * 0.6)
+            if (nose_sneer > 0.24 or mouth_upper_up > 0.24) and disgust_score > 0.35:
                 scores["Disgusted"] += disgust_score * 2.0
                 scores["Neutral"] *= max(0.1, 1.0 - disgust_score * 1.2)
 

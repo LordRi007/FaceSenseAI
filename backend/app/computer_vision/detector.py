@@ -10,7 +10,7 @@ from typing import List, Tuple, Optional, Dict, Any
 
 from app.schemas.schemas import DetectedFace, BoundingBox
 from app.computer_vision.expression_classifier import classifier
-from app.computer_vision.tracker import tracker
+from app.computer_vision.tracker import tracker, calculate_iou
 from app.computer_vision.quality_checker import quality_checker
 
 MODEL_PATH = os.path.abspath(
@@ -87,10 +87,10 @@ class FaceVisionPipeline:
                     base_options=base_options,
                     output_face_blendshapes=True,
                     output_facial_transformation_matrixes=False,
-                    num_faces=5,
-                    min_face_detection_confidence=0.4,
-                    min_face_presence_confidence=0.4,
-                    min_tracking_confidence=0.4
+                    num_faces=8,
+                    min_face_detection_confidence=0.28,
+                    min_face_presence_confidence=0.28,
+                    min_tracking_confidence=0.28
                 )
                 self.landmarker = vision.FaceLandmarker.create_from_options(options)
                 print(f"[FaceVisionPipeline] MediaPipe FaceLandmarker initialized with blendshapes from {chosen_path}.")
@@ -102,10 +102,10 @@ class FaceVisionPipeline:
                         base_options=base_options,
                         output_face_blendshapes=True,
                         output_facial_transformation_matrixes=False,
-                        num_faces=5,
-                        min_face_detection_confidence=0.4,
-                        min_face_presence_confidence=0.4,
-                        min_tracking_confidence=0.4
+                        num_faces=8,
+                        min_face_detection_confidence=0.28,
+                        min_face_presence_confidence=0.28,
+                        min_tracking_confidence=0.28
                     )
                     self.landmarker = vision.FaceLandmarker.create_from_options(options)
                     print(f"[FaceVisionPipeline] MediaPipe FaceLandmarker initialized from file path.")
@@ -193,27 +193,34 @@ class FaceVisionPipeline:
             except Exception as e:
                 print(f"[FaceVisionPipeline] Landmarker detect error: {e}")
 
-        # 2. Fallback to Haar Cascade
-        if not raw_detections and self.haar_cascade is not None:
+        # 2. Complementary Haar Cascade Detection (ensures all multiple faces in background/groups are caught)
+        if self.haar_cascade is not None:
             try:
                 gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
-                faces = self.haar_cascade.detectMultiScale(
-                    gray, scaleFactor=1.1, minNeighbors=3, minSize=(30, 30)
+                haar_detected = self.haar_cascade.detectMultiScale(
+                    gray, scaleFactor=1.1, minNeighbors=3, minSize=(35, 35)
                 )
-                for (fx, fy, fw, fh) in faces:
+                mp_boxes = [d["bbox"] for d in raw_detections]
+
+                for (fx, fy, fw, fh) in haar_detected:
                     bx = round(float(fx) / w, 4)
                     by = round(float(fy) / h, 4)
                     bw = round(float(fw) / w, 4)
                     bh = round(float(fh) / h, 4)
-                    crop = frame_bgr[fy:fy+fh, fx:fx+fw]
-                    raw_detections.append({
-                        "bbox": (bx, by, bw, bh),
-                        "landmarks": None,
-                        "blendshapes": None,
-                        "crop": crop
-                    })
+                    haar_box = (bx, by, bw, bh)
+
+                    # Only add if it doesn't already overlap with an existing MediaPipe detection
+                    is_overlap = any(calculate_iou(haar_box, mp_box) > 0.30 for mp_box in mp_boxes)
+                    if not is_overlap:
+                        crop = frame_bgr[fy:fy+fh, fx:fx+fw]
+                        raw_detections.append({
+                            "bbox": haar_box,
+                            "landmarks": None,
+                            "blendshapes": None,
+                            "crop": crop
+                        })
             except Exception as e:
-                print(f"[FaceVisionPipeline] Haar error: {e}")
+                print(f"[FaceVisionPipeline] Haar multi-face error: {e}")
 
         if not raw_detections:
             tracker.update_tracks([])
