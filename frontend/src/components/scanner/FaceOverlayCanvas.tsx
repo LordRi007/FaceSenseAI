@@ -8,14 +8,14 @@ interface FaceOverlayCanvasProps {
 }
 
 const EMOTION_COLORS: Record<EmotionLabel | string, { border: string; text: string }> = {
-  Happy: { border: '#10B981', text: '#10B981' },
-  Surprised: { border: '#F59E0B', text: '#F59E0B' },
-  Sad: { border: '#0284C7', text: '#0284C7' },
-  Angry: { border: '#F43F5E', text: '#F43F5E' },
-  Fearful: { border: '#8B5CF6', text: '#8B5CF6' },
-  Disgusted: { border: '#EA580C', text: '#EA580C' },
-  Neutral: { border: '#64748B', text: '#94A3B8' },
-  Uncertain: { border: '#EAB308', text: '#EAB308' },
+  Happy: { border: '#10B981', text: '#34D399' },
+  Surprised: { border: '#F59E0B', text: '#FBBF24' },
+  Sad: { border: '#0284C7', text: '#38BDF8' },
+  Angry: { border: '#F43F5E', text: '#FB7185' },
+  Fearful: { border: '#8B5CF6', text: '#A78BFA' },
+  Disgusted: { border: '#EA580C', text: '#FB923C' },
+  Neutral: { border: '#06B6D4', text: '#22D3EE' },
+  Uncertain: { border: '#EAB308', text: '#FACC15' },
 };
 
 export const FaceOverlayCanvas: React.FC<FaceOverlayCanvasProps> = ({
@@ -40,6 +40,11 @@ export const FaceOverlayCanvas: React.FC<FaceOverlayCanvasProps> = ({
       const displayW = rect.width;
       const displayH = rect.height;
 
+      if (displayW <= 0 || displayH <= 0) {
+        animationFrameId = requestAnimationFrame(render);
+        return;
+      }
+
       if (canvas.width !== displayW || canvas.height !== displayH) {
         canvas.width = displayW;
         canvas.height = displayH;
@@ -47,8 +52,8 @@ export const FaceOverlayCanvas: React.FC<FaceOverlayCanvasProps> = ({
 
       ctx.clearRect(0, 0, displayW, displayH);
 
-      const videoW = video.videoWidth || displayW;
-      const videoH = video.videoHeight || displayH;
+      const videoW = video.videoWidth || 640;
+      const videoH = video.videoHeight || 480;
 
       // Calculate object-cover transformation to match browser video rendering
       const scale = Math.max(displayW / videoW, displayH / videoH);
@@ -62,34 +67,37 @@ export const FaceOverlayCanvas: React.FC<FaceOverlayCanvasProps> = ({
         const colorSet = EMOTION_COLORS[expression] || EMOTION_COLORS.Neutral;
         const emoji = EMOTION_EMOJIS[expression] || '😐';
 
-        // Precise coordinates projected through object-cover scale & offset
-        let boxX = offsetX + (bounding_box.x * renderedW);
-        const boxY = offsetY + (bounding_box.y * renderedH);
-        const boxW = bounding_box.width * renderedW;
-        const boxH = bounding_box.height * renderedH;
+        // Bounding box dimensions
+        const boxW = Math.max(30, bounding_box.width * renderedW);
+        const boxH = Math.max(30, bounding_box.height * renderedH);
 
-        // If mirrored (front-facing camera), flip horizontal coordinate
+        // Precise coordinates accounting for horizontal mirror and object-cover offsets
+        let boxX: number;
         if (isMirrored) {
-          boxX = displayW - (boxX + boxW);
+          const mirroredNormX = Math.max(0.0, 1.0 - (bounding_box.x + bounding_box.width));
+          boxX = offsetX + (mirroredNormX * renderedW);
+        } else {
+          boxX = offsetX + (bounding_box.x * renderedW);
         }
+        const boxY = offsetY + (bounding_box.y * renderedH);
 
         // ---------------- ONLY TRACKING BORDER (NO FILL) ----------------
         ctx.strokeStyle = colorSet.border;
-        ctx.lineWidth = 2.0;
+        ctx.lineWidth = 3.0;
 
-        // Subtle glow effect on border
+        // High-visibility glow effect on border
         ctx.shadowColor = colorSet.border;
-        ctx.shadowBlur = 8;
+        ctx.shadowBlur = 12;
 
-        // Draw only perimeter outline (completely transparent inside)
+        // Draw perimeter outline (completely transparent inside)
         ctx.strokeRect(boxX, boxY, boxW, boxH);
 
         // Reset shadow
         ctx.shadowBlur = 0;
 
         // Stylized corner brackets for tech tracking HUD look
-        const cornerLen = Math.min(22, boxW * 0.22, boxH * 0.22);
-        ctx.lineWidth = 4;
+        const cornerLen = Math.min(26, boxW * 0.25, boxH * 0.25);
+        ctx.lineWidth = 5.0;
         ctx.beginPath();
         // Top-left
         ctx.moveTo(boxX, boxY + cornerLen);
@@ -110,36 +118,36 @@ export const FaceOverlayCanvas: React.FC<FaceOverlayCanvasProps> = ({
         ctx.stroke();
 
         // ---------------- Header Tag Above Bounding Box with Emoji ----------------
-        const headerY = Math.max(10, boxY - 34);
+        const headerY = Math.max(8, boxY - 36);
         const idLabel = participant_code || session_tracking_id;
         const confPercent = Math.round(confidence * 100);
         const tagText = `${emoji} ${expression} ${confPercent}%  •  ${idLabel}`;
 
-        ctx.font = '600 13px "Segoe UI Emoji", "Apple Color Emoji", Inter, sans-serif';
+        ctx.font = 'bold 13px "Segoe UI Emoji", "Apple Color Emoji", Inter, sans-serif';
         const textWidth = ctx.measureText(tagText).width;
-        const tagPadding = 10;
-        const tagHeight = 28;
+        const tagPadding = 12;
+        const tagHeight = 30;
 
-        // Tag background (solid dark pill above box, never over the face)
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.90)';
+        // Tag background: solid dark backdrop with vibrant border
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
         ctx.strokeStyle = colorSet.border;
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 2.0;
 
-        const tagX = Math.max(4, Math.min(boxX, displayW - textWidth - tagPadding * 2 - 8));
+        const tagX = Math.max(6, Math.min(boxX, displayW - textWidth - tagPadding * 2 - 10));
 
         // Draw tag pill
         ctx.beginPath();
-        ctx.roundRect(tagX, headerY, textWidth + tagPadding * 2, tagHeight, 7);
+        ctx.roundRect(tagX, headerY, textWidth + tagPadding * 2, tagHeight, 8);
         ctx.fill();
         ctx.stroke();
 
         // Tag Text with Emoji
         ctx.fillStyle = '#FFFFFF';
-        ctx.fillText(tagText, tagX + tagPadding, headerY + 19);
+        ctx.fillText(tagText, tagX + tagPadding, headerY + 20);
 
         // Secondary participant name if registered
         if (display_name) {
-          ctx.font = '500 11px Inter, sans-serif';
+          ctx.font = '600 11px Inter, sans-serif';
           ctx.fillStyle = '#38BDF8';
           ctx.fillText(`Authorized: ${display_name}`, tagX + tagPadding, headerY + tagHeight + 14);
         }

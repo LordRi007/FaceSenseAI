@@ -198,7 +198,7 @@ class FaceVisionPipeline:
             try:
                 gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
                 faces = self.haar_cascade.detectMultiScale(
-                    gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60)
+                    gray, scaleFactor=1.1, minNeighbors=3, minSize=(30, 30)
                 )
                 for (fx, fy, fw, fh) in faces:
                     bx = round(float(fx) / w, 4)
@@ -217,7 +217,34 @@ class FaceVisionPipeline:
 
         if not raw_detections:
             tracker.update_tracks([])
-            return []
+            # Return active tracks that were visible in the last 2 frames for smooth tracking persistence
+            smoothed_faces: List[DetectedFace] = []
+            for tid, t_obj in tracker.tracks.items():
+                if t_obj.missing_frames <= 2 and t_obj.bbox:
+                    smoothed_faces.append(
+                        DetectedFace(
+                            session_tracking_id=tid,
+                            participant_id=t_obj.participant_id,
+                            participant_code=t_obj.participant_code,
+                            display_name=t_obj.display_name,
+                            is_registered=t_obj.is_registered,
+                            expression=t_obj.expression,
+                            confidence=round(t_obj.confidence, 3),
+                            all_scores=t_obj.all_scores,
+                            bounding_box=BoundingBox(
+                                x=t_obj.bbox[0],
+                                y=t_obj.bbox[1],
+                                width=t_obj.bbox[2],
+                                height=t_obj.bbox[3]
+                            ),
+                            status="Tracking",
+                            quality_score=0.8,
+                            brightness_ok=True,
+                            blur_ok=True,
+                            size_ok=True
+                        )
+                    )
+            return smoothed_faces
 
         # Update Session Tracker
         detected_boxes = [d["bbox"] for d in raw_detections]

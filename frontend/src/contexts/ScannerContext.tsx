@@ -99,13 +99,13 @@ export const ScannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Helper to capture current frame as base64 JPEG
   const captureCurrentFrameBase64 = useCallback((): string | null => {
     const video = camera.videoRef.current;
-    if (!video || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return null;
+    if (!video || video.readyState === 0 || !video.videoWidth || !video.videoHeight) return null;
 
     const canvas = hiddenCanvasRef.current || document.createElement('canvas');
-    // Scale down to 480x... or 640x... for transmission speed and rapid cloud inference
-    const targetWidth = 480;
+    // 640px width offers optimal balance between bandwidth and computer vision precision
+    const targetWidth = 640;
     const vWidth = video.videoWidth || 640;
-    const vHeight = video.videoHeight || 360;
+    const vHeight = video.videoHeight || 480;
     const targetHeight = Math.max(120, Math.round((vHeight / vWidth) * targetWidth));
 
     canvas.width = targetWidth;
@@ -114,7 +114,7 @@ export const ScannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (!ctx) return null;
 
     ctx.drawImage(video, 0, 0, targetWidth, targetHeight);
-    return canvas.toDataURL('image/jpeg', 0.80);
+    return canvas.toDataURL('image/jpeg', 0.82);
   }, [camera.videoRef]);
 
   // Dual-mode frame sending loop (WebSocket with HTTP fallback)
@@ -130,9 +130,8 @@ export const ScannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // Interval tick every 100ms
     frameIntervalRef.current = setInterval(async () => {
       // Flow control / backpressure check:
-      // If previous frame is still processing and less than 600ms elapsed, wait
       const now = Date.now();
-      if (isProcessingRef.current && (now - lastFrameTimestampRef.current < 600)) {
+      if (isProcessingRef.current && (now - lastFrameTimestampRef.current < 400)) {
         return;
       }
 
@@ -146,6 +145,10 @@ export const ScannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
         // High-speed WebSocket streaming
         setEngineMode('websocket');
         wsClient.sendFrame(b64, sessionId, 'Browser Camera');
+        // Safety watchdog: clear processing flag after 400ms if server packet was delayed
+        setTimeout(() => {
+          isProcessingRef.current = false;
+        }, 400);
       } else {
         // Resilient HTTP Fallback for cloud environments or proxies blocking WebSockets
         try {
