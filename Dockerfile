@@ -46,3 +46,4 @@ EXPOSE 8000
 
 # Start Uvicorn bound to 0.0.0.0 and dynamic PORT
 CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+
