@@ -134,12 +134,14 @@ export const TrackCard: React.FC<TrackCardProps> = ({ face, onRegister, onCheckI
             </button>
           </>
         ) : (
-          <div className="w-full flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-            <span className="flex items-center gap-1 text-emerald-500 font-medium">
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Authorized Check-In</span>
+          <div className="w-full py-1.5 px-3 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-between text-xs">
+            <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-semibold">
+              <ShieldCheck className="w-4 h-4 text-emerald-500" />
+              <span>Auto-Recognized</span>
             </span>
-            <span className="font-mono text-[11px]">No Snapshot Needed</span>
+            <span className="text-[11px] font-bold text-emerald-500 bg-emerald-500/20 px-2 py-0.5 rounded-full">
+              Checked In ✓
+            </span>
           </div>
         )}
       </div>

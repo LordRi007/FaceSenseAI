@@ -34,10 +34,6 @@ def seed_database():
     init_db()
     db = SessionLocal()
     try:
-        if db.query(Participant).count() > 0:
-            print("[Seed] Data already exists. Skipping seed.")
-            return
-
         now = datetime.now(timezone.utc)
 
         # Seed Settings
@@ -52,14 +48,43 @@ def seed_database():
             )
             db.add(setting)
 
-        # Seed default Camera Session
-        session = CameraSession(
-            camera_label="Integrated HD Webcam",
-            started_at=now - timedelta(hours=3),
-            status="ACTIVE"
-        )
-        db.add(session)
-        db.flush()
+        # Ensure active Camera Session exists
+        session = db.query(CameraSession).filter_by(status="ACTIVE").first()
+        if not session:
+            session = CameraSession(
+                camera_label="Integrated HD Webcam",
+                started_at=now - timedelta(hours=3),
+                status="ACTIVE"
+            )
+            db.add(session)
+            db.flush()
+
+        # Seed pre-registered user 'seak' if snapshot exists
+        seak_photo = os.path.join(SNAPSHOT_DIR, "P00007_1793347640.jpg")
+        if os.path.exists(seak_photo) and not db.query(Participant).filter_by(participant_code="P00007").first():
+            p_seak = Participant(
+                participant_code="P00007",
+                display_name="seak",
+                photo_path="/storage/snapshots/P00007_1793347640.jpg",
+                created_at=now,
+                updated_at=now,
+                consent_status="APPROVED",
+                consent_timestamp=now,
+                opt_in_history=True
+            )
+            db.add(p_seak)
+            db.flush()
+            db.add(Registration(
+                participant_id=p_seak.id,
+                snapshot_path="/storage/snapshots/P00007_1793347640.jpg",
+                registered_at=now
+            ))
+            db.commit()
+            print("[Seed] Seeded participant seak (P00007)")
+
+        if db.query(Participant).count() > 1:
+            print("[Seed] Participants already exist. Skipping base seed.")
+            return
 
         # Seed Participants
         participants_data = [

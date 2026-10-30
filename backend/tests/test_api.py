@@ -7,6 +7,15 @@ client = TestClient(app)
 def test_root_endpoint():
     response = client.get("/")
     assert response.status_code == 200
+    if "text/html" in response.headers.get("content-type", ""):
+        assert "FaceSense" in response.text
+    else:
+        data = response.json()
+        assert data["system"] == "FaceSense AI"
+
+def test_api_info_endpoint():
+    response = client.get("/api/info")
+    assert response.status_code == 200
     data = response.json()
     assert data["system"] == "FaceSense AI"
     assert "disclaimer" in data

@@ -113,6 +113,13 @@ class ParticipantService:
                 name=participant.display_name
             )
 
+        # Refresh in-memory face recognizer templates for instant automatic recognition
+        try:
+            from app.computer_vision.face_recognizer import face_recognizer
+            face_recognizer.load_registered_participants(db, vision_pipeline)
+        except Exception as fr_err:
+            print(f"[ParticipantService] Failed to reload face recognizer: {fr_err}")
+
         return True, participant, "Participant registered successfully."
 
     def check_in_participant(

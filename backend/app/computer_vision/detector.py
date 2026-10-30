@@ -12,6 +12,7 @@ from app.schemas.schemas import DetectedFace, BoundingBox
 from app.computer_vision.expression_classifier import classifier
 from app.computer_vision.tracker import tracker, calculate_iou
 from app.computer_vision.quality_checker import quality_checker
+from app.computer_vision.face_recognizer import face_recognizer
 
 MODEL_PATH = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "models", "face_landmarker.task")
@@ -289,11 +290,39 @@ class FaceVisionPipeline:
                 if is_valid_quality and crop is not None and crop.size > 0:
                     tracked_obj.update_snapshot_candidate(crop, quality_score, bbox)
 
+                # Automatic Facial Recognition (No manual check-in needed)
+                if not tracked_obj.is_registered:
+                    rec_match = face_recognizer.recognize_face(crop, landmarks)
+                    if rec_match:
+                        matched_pid, matched_code, matched_name, match_conf = rec_match
+                        tracker.link_participant(tid, matched_pid, matched_code, matched_name)
+                        print(f"[FaceVisionPipeline] Auto-recognized participant: {matched_name or matched_code} ({matched_code}) with {match_conf*100:.1f}% confidence")
+                        try:
+                            from app.database.session import SessionLocal
+                            from app.models.database import CheckIn
+                            from datetime import datetime, timezone
+                            db_auto = SessionLocal()
+                            recent_ci = db_auto.query(CheckIn).filter(
+                                CheckIn.participant_id == matched_pid,
+                                CheckIn.session_id == (session_id or 1)
+                            ).first()
+                            if not recent_ci:
+                                new_ci = CheckIn(
+                                    participant_id=matched_pid,
+                                    session_id=session_id or 1,
+                                    checked_in_at=datetime.now(timezone.utc)
+                                )
+                                db_auto.add(new_ci)
+                                db_auto.commit()
+                            db_auto.close()
+                        except Exception as ci_err:
+                            pass
+
                 is_reg = tracked_obj.is_registered
                 p_id = tracked_obj.participant_id
                 p_code = tracked_obj.participant_code
                 d_name = tracked_obj.display_name
-                status_str = f"Registered ({p_code})" if is_reg else ("New" if is_new else "Tracking")
+                status_str = f"Authorized: {d_name or p_code}" if is_reg else ("New" if is_new else "Tracking")
             else:
                 is_reg = False
                 p_id = None

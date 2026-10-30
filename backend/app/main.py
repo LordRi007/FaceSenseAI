@@ -55,7 +55,15 @@ async def lifespan(app: FastAPI):
     # Startup
     init_db()
     seed_initial_data()
-    print("[FaceSense AI] Backend initialized. AI models and database ready.")
+    try:
+        from app.computer_vision.face_recognizer import face_recognizer
+        from app.computer_vision.detector import vision_pipeline
+        db = SessionLocal()
+        face_recognizer.load_registered_participants(db, vision_pipeline)
+        db.close()
+    except Exception as rec_err:
+        print(f"[FaceSense AI] Face recognizer init error: {rec_err}")
+    print("[FaceSense AI] Backend initialized. AI models, face recognizer, and database ready.")
     yield
     # Shutdown
     print("[FaceSense AI] Shutting down services.")
@@ -101,6 +109,23 @@ app.include_router(settings_router, prefix="/api")
 async def websocket_face_analysis(websocket: WebSocket):
     await ws_manager.connect(websocket)
     await ws_manager.handle_stream(websocket)
+
+@app.get("/api/info")
+def api_info():
+    return {
+        "system": "FaceSense AI",
+        "description": "Real-Time Facial Mood & Feeling Analytics System",
+        "version": "1.0.0",
+        "status": "online",
+        "disclaimer": "Predictions are estimated facial expressions and do not represent psychological diagnosis or genuine emotional state.",
+        "endpoints": {
+            "docs": "/docs",
+            "scanner": "/api/scanner",
+            "participants": "/api/participants",
+            "analytics": "/api/analytics",
+            "websocket": "/ws/face-analysis"
+        }
+    }
 
 # Production Frontend SPA Static Mount
 FRONTEND_DIST = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist"))

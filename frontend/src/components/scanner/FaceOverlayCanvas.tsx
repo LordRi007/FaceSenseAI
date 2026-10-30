@@ -119,7 +119,8 @@ export const FaceOverlayCanvas: React.FC<FaceOverlayCanvasProps> = ({
 
         // ---------------- Header Tag Above Bounding Box with Emoji ----------------
         const headerY = Math.max(8, boxY - 36);
-        const idLabel = participant_code || session_tracking_id;
+        const isAuthorized = Boolean(face.is_registered || display_name);
+        const idLabel = display_name ? `✓ ${display_name}` : (participant_code || session_tracking_id);
         const confPercent = Math.round(confidence * 100);
         const tagText = `${emoji} ${expression} ${confPercent}%  •  ${idLabel}`;
 
@@ -128,9 +129,9 @@ export const FaceOverlayCanvas: React.FC<FaceOverlayCanvasProps> = ({
         const tagPadding = 12;
         const tagHeight = 30;
 
-        // Tag background: solid dark backdrop with vibrant border
+        // Tag background: solid dark backdrop with vibrant border (emerald if authorized)
         ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
-        ctx.strokeStyle = colorSet.border;
+        ctx.strokeStyle = isAuthorized ? '#10B981' : colorSet.border;
         ctx.lineWidth = 2.0;
 
         const tagX = Math.max(6, Math.min(boxX, displayW - textWidth - tagPadding * 2 - 10));
@@ -145,11 +146,11 @@ export const FaceOverlayCanvas: React.FC<FaceOverlayCanvasProps> = ({
         ctx.fillStyle = '#FFFFFF';
         ctx.fillText(tagText, tagX + tagPadding, headerY + 20);
 
-        // Secondary participant name if registered
-        if (display_name) {
+        // Secondary participant code badge if registered
+        if (participant_code && display_name) {
           ctx.font = '600 11px Inter, sans-serif';
-          ctx.fillStyle = '#38BDF8';
-          ctx.fillText(`Authorized: ${display_name}`, tagX + tagPadding, headerY + tagHeight + 14);
+          ctx.fillStyle = '#10B981';
+          ctx.fillText(`Auto-Recognized: ${participant_code}`, tagX + tagPadding, headerY + tagHeight + 14);
         }
       });
 
