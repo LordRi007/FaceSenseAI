@@ -91,12 +91,14 @@ export const ScannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Helper to capture current frame as base64 JPEG
   const captureCurrentFrameBase64 = useCallback((): string | null => {
     const video = camera.videoRef.current;
-    if (!video || video.readyState < 2) return null;
+    if (!video || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return null;
 
     const canvas = hiddenCanvasRef.current || document.createElement('canvas');
     // Scale down for transmission efficiency (e.g. 640x360 or 854x480)
     const targetWidth = 640;
-    const targetHeight = Math.round((video.videoHeight / (video.videoWidth || 1)) * targetWidth) || 360;
+    const vWidth = video.videoWidth || 640;
+    const vHeight = video.videoHeight || 360;
+    const targetHeight = Math.max(120, Math.round((vHeight / vWidth) * targetWidth));
 
     canvas.width = targetWidth;
     canvas.height = targetHeight;

@@ -11,17 +11,22 @@ class ScannerWebSocketClient {
   private statusListeners: Set<StatusCallback> = new Set();
   private isExplicitlyClosed: boolean = false;
 
-  constructor() {
+  private getResolvedUrl(): string {
     if (import.meta.env.VITE_WS_URL) {
-      this.url = import.meta.env.VITE_WS_URL;
-    } else {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      // If in dev with Vite proxy or direct port
-      const host = window.location.port === '3000'
-        ? `${window.location.hostname}:8000`
-        : window.location.host;
-      this.url = `${protocol}//${host}/ws/face-analysis`;
+      return import.meta.env.VITE_WS_URL;
     }
+    if (typeof window !== 'undefined') {
+      const isHttps = window.location.protocol === 'https:';
+      const protocol = isHttps ? 'wss:' : 'ws:';
+      const isLocalDev = window.location.port === '3000' || window.location.port === '5173';
+      const host = isLocalDev ? `${window.location.hostname}:8000` : window.location.host;
+      return `${protocol}//${host}/ws/face-analysis`;
+    }
+    return 'ws://localhost:8000/ws/face-analysis';
+  }
+
+  constructor() {
+    this.url = this.getResolvedUrl();
   }
 
   public connect() {
@@ -30,8 +35,10 @@ class ScannerWebSocketClient {
     }
 
     this.isExplicitlyClosed = false;
+    this.url = this.getResolvedUrl();
 
     try {
+      console.log(`[WebSocket] Connecting to AI vision pipeline: ${this.url}`);
       this.socket = new WebSocket(this.url);
 
       this.socket.onopen = () => {

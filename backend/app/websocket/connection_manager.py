@@ -29,6 +29,9 @@ class ScannerWebSocketManager:
                 # Support both text (JSON with base64) and binary JPEG frames
                 message = await websocket.receive()
 
+                if message.get("type") == "websocket.disconnect":
+                    break
+
                 frame_data = None
                 session_id = 1
                 camera_label = "Browser Camera"
@@ -57,7 +60,11 @@ class ScannerWebSocketManager:
                 # Process frame with Computer Vision pipeline
                 frame_bgr = vision_pipeline.decode_frame(frame_data)
                 if frame_bgr is not None:
-                    detected_faces = vision_pipeline.process_frame(frame_bgr, session_id=session_id)
+                    detected_faces = []
+                    try:
+                        detected_faces = vision_pipeline.process_frame(frame_bgr, session_id=session_id)
+                    except Exception as cv_err:
+                        print(f"[WebSocket] Vision process error: {cv_err}")
 
                     # Persist expression events in DB for registered participants who opted in
                     # and throttle event persistence to avoid flooding DB (e.g. 1 per second per participant)
@@ -66,7 +73,7 @@ class ScannerWebSocketManager:
                         setting = db.query(Setting).first()
                         save_history = setting.save_history if setting else True
 
-                        if save_history:
+                        if save_history and detected_faces:
                             for face in detected_faces:
                                 if face.participant_id and face.expression != "Uncertain":
                                     p = db.query(Participant).filter(Participant.id == face.participant_id).first()
@@ -103,8 +110,12 @@ class ScannerWebSocketManager:
                     }))
 
         except WebSocketDisconnect:
+            print("[WebSocket] Client disconnected cleanly.")
             self.disconnect(websocket)
         except Exception as e:
+            import traceback
+            print(f"[WebSocket] Stream error: {e}")
+            traceback.print_exc()
             self.disconnect(websocket)
 
 ws_manager = ScannerWebSocketManager()

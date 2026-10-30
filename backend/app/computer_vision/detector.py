@@ -16,6 +16,9 @@ from app.computer_vision.quality_checker import quality_checker
 MODEL_PATH = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "models", "face_landmarker.task")
 )
+HAAR_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "models", "haarcascade_frontalface_default.xml")
+)
 
 class FaceVisionPipeline:
     """
@@ -28,16 +31,41 @@ class FaceVisionPipeline:
         self._init_landmarker()
 
         # Fallback Haar Cascade
+        self.haar_cascade = None
         try:
-            self.haar_cascade = cv2.CascadeClassifier(
-                cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-            )
-        except Exception:
-            self.haar_cascade = None
+            haar_candidates = [
+                HAAR_PATH,
+                os.path.join(cv2.data.haarcascades, "haarcascade_frontalface_default.xml"),
+                os.path.join(os.getcwd(), "models", "haarcascade_frontalface_default.xml"),
+                "/app/backend/models/haarcascade_frontalface_default.xml"
+            ]
+            for hp in haar_candidates:
+                if os.path.exists(hp) and os.path.getsize(hp) > 10000:
+                    casc = cv2.CascadeClassifier(hp)
+                    if not casc.empty():
+                        self.haar_cascade = casc
+                        print(f"[FaceVisionPipeline] Fallback Haar Cascade loaded from {hp}")
+                        break
+        except Exception as herr:
+            print(f"[FaceVisionPipeline] Warning: Haar cascade init: {herr}")
 
     def _init_landmarker(self):
+        candidate_paths = [
+            MODEL_PATH,
+            os.path.join(os.getcwd(), "models", "face_landmarker.task"),
+            os.path.join(os.getcwd(), "backend", "models", "face_landmarker.task"),
+            "/app/backend/models/face_landmarker.task",
+            "/app/models/face_landmarker.task"
+        ]
+
+        chosen_path = None
+        for p in candidate_paths:
+            if os.path.exists(p) and os.path.getsize(p) > 1000000:
+                chosen_path = p
+                break
+
         # Auto-download model asset if missing (ensures seamless cloud deployment)
-        if not os.path.exists(MODEL_PATH):
+        if not chosen_path:
             try:
                 import urllib.request
                 os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
@@ -45,26 +73,45 @@ class FaceVisionPipeline:
                 model_url = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
                 urllib.request.urlretrieve(model_url, MODEL_PATH)
                 print("[FaceVisionPipeline] Download complete.")
+                if os.path.exists(MODEL_PATH) and os.path.getsize(MODEL_PATH) > 1000000:
+                    chosen_path = MODEL_PATH
             except Exception as dl_err:
                 print(f"[FaceVisionPipeline] Warning: Could not download model asset: {dl_err}")
 
-        if os.path.exists(MODEL_PATH):
+        if chosen_path and os.path.exists(chosen_path):
             try:
-                base_options = mp_python.BaseOptions(model_asset_path=MODEL_PATH)
+                with open(chosen_path, "rb") as f:
+                    model_bytes = f.read()
+                base_options = mp_python.BaseOptions(model_asset_buffer=model_bytes)
                 options = vision.FaceLandmarkerOptions(
                     base_options=base_options,
                     output_face_blendshapes=True,
                     output_facial_transformation_matrixes=False,
                     num_faces=5,
-                    min_face_detection_confidence=0.5,
-                    min_face_presence_confidence=0.5,
-                    min_tracking_confidence=0.5
+                    min_face_detection_confidence=0.4,
+                    min_face_presence_confidence=0.4,
+                    min_tracking_confidence=0.4
                 )
                 self.landmarker = vision.FaceLandmarker.create_from_options(options)
-                print("[FaceVisionPipeline] MediaPipe FaceLandmarker initialized with blendshapes.")
+                print(f"[FaceVisionPipeline] MediaPipe FaceLandmarker initialized with blendshapes from {chosen_path}.")
             except Exception as e:
-                print(f"[FaceVisionPipeline] Warning: Could not initialize FaceLandmarker: {e}")
-                self.landmarker = None
+                print(f"[FaceVisionPipeline] Model buffer initialization failed, attempting file path: {e}")
+                try:
+                    base_options = mp_python.BaseOptions(model_asset_path=chosen_path)
+                    options = vision.FaceLandmarkerOptions(
+                        base_options=base_options,
+                        output_face_blendshapes=True,
+                        output_facial_transformation_matrixes=False,
+                        num_faces=5,
+                        min_face_detection_confidence=0.4,
+                        min_face_presence_confidence=0.4,
+                        min_tracking_confidence=0.4
+                    )
+                    self.landmarker = vision.FaceLandmarker.create_from_options(options)
+                    print(f"[FaceVisionPipeline] MediaPipe FaceLandmarker initialized from file path.")
+                except Exception as e2:
+                    print(f"[FaceVisionPipeline] Critical: Could not initialize FaceLandmarker: {e2}")
+                    self.landmarker = None
 
     def decode_frame(self, frame_data: Any) -> Optional[np.ndarray]:
         """
@@ -96,7 +143,7 @@ class FaceVisionPipeline:
             return []
 
         h, w = frame_bgr.shape[:2]
-        frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        frame_rgb = np.ascontiguousarray(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB), dtype=np.uint8)
         raw_detections = []
 
         # 1. MediaPipe FaceLandmarker with Blendshapes

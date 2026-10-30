@@ -26,6 +26,7 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ isMirrored = true }) => 
     liveFps,
     faces,
     activeTracksCount,
+    isWsConnected,
     startCamera,
   } = useScanner();
 
@@ -75,6 +76,16 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ isMirrored = true }) => 
             <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900/80 backdrop-blur-md border border-slate-700/60 text-xs font-medium text-white shadow-lg pointer-events-auto">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
               <span>SCANNING LIVE</span>
+            </div>
+
+            {/* AI Engine Status */}
+            <div className={`hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full backdrop-blur-md border text-xs font-medium shadow-lg pointer-events-auto ${
+              isWsConnected
+                ? 'bg-slate-900/80 border-slate-700/60 text-emerald-400'
+                : 'bg-rose-950/80 border-rose-700/60 text-rose-300'
+            }`}>
+              <span className={`w-2 h-2 rounded-full ${isWsConnected ? 'bg-emerald-400' : 'bg-rose-400 animate-ping'}`} />
+              <span>{isWsConnected ? 'AI Engine Online' : 'AI Engine Connecting...'}</span>
             </div>
 
             {/* FPS & Resolution */}
