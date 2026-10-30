@@ -18,7 +18,7 @@ class FacialExpressionClassifier:
     with exponential moving average (EMA) temporal smoothing per active track ID.
     """
 
-    def __init__(self, smoothing_alpha: float = 0.35, uncertainty_threshold: float = 0.38):
+    def __init__(self, smoothing_alpha: float = 0.35, uncertainty_threshold: float = 0.25):
         self.smoothing_alpha = smoothing_alpha
         self.uncertainty_threshold = uncertainty_threshold
         # Track ID -> Dict[str, float] of smoothed probabilities
@@ -37,8 +37,8 @@ class FacialExpressionClassifier:
         Classifies facial expression into 7 standard categories.
         Returns: (display_label, confidence, all_probabilities)
         """
-        scores = {e: 0.08 for e in EMOTION_LABELS}
-        scores["Neutral"] = 0.28  # Resting default
+        scores = {e: 0.06 for e in EMOTION_LABELS}
+        scores["Neutral"] = 0.45  # Solid resting baseline default
 
         if blendshapes:
             # MediaPipe FACS Blendshapes

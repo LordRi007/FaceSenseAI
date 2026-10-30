@@ -10,9 +10,10 @@ import {
   Camera,
   Settings,
   ShieldCheck,
+  X,
 } from 'lucide-react';
 
-const NAV_ITEMS = [
+export const NAV_ITEMS = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/scanner', label: 'Live Face Scanner', icon: ScanFace, highlight: true },
   { path: '/analytics', label: 'Facial Mood & Feeling Analytics', icon: BarChart3 },
@@ -23,12 +24,27 @@ const NAV_ITEMS = [
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
-export const Sidebar: React.FC = () => {
-  return (
-    <aside className="w-64 bg-slate-50 dark:bg-dark-sidebar border-r border-slate-200 dark:border-slate-800 flex flex-col justify-between shrink-0 transition-colors">
+interface SidebarProps {
+  mobileOpen?: boolean;
+  onCloseMobile?: () => void;
+}
+
+export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen = false, onCloseMobile }) => {
+  const content = (
+    <div className="flex flex-col justify-between h-full">
       <div className="p-4 space-y-1">
-        <div className="px-3 py-2 text-[11px] font-semibold tracking-wider text-slate-400 uppercase">
-          Navigation
+        <div className="flex items-center justify-between px-3 py-2">
+          <span className="text-[11px] font-semibold tracking-wider text-slate-400 uppercase">
+            Navigation
+          </span>
+          {onCloseMobile && (
+            <button
+              onClick={onCloseMobile}
+              className="lg:hidden p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
         </div>
 
         <nav className="space-y-1.5">
@@ -38,6 +54,7 @@ export const Sidebar: React.FC = () => {
               <NavLink
                 key={item.path}
                 to={item.path}
+                onClick={onCloseMobile}
                 className={({ isActive }) =>
                   `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
                     isActive
@@ -64,7 +81,29 @@ export const Sidebar: React.FC = () => {
           Consent-driven records only. Facial estimates do not determine internal psychological states.
         </p>
       </div>
-    </aside>
+    </div>
+  );
+
+  return (
+    <>
+      {/* Desktop Sticky Sidebar */}
+      <aside className="hidden lg:flex w-64 bg-slate-50 dark:bg-dark-sidebar border-r border-slate-200 dark:border-slate-800 flex-col justify-between shrink-0 transition-colors">
+        {content}
+      </aside>
+
+      {/* Mobile Drawer Backdrop & Slide-out */}
+      {mobileOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden flex">
+          <div
+            className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm transition-opacity"
+            onClick={onCloseMobile}
+          />
+          <aside className="relative w-72 max-w-[80vw] bg-white dark:bg-dark-sidebar border-r border-slate-200 dark:border-slate-800 flex flex-col justify-between shadow-2xl z-10 animate-in slide-in-from-left duration-200">
+            {content}
+          </aside>
+        </div>
+      )}
+    </>
   );
 };
 

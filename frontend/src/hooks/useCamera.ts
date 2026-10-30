@@ -96,15 +96,59 @@ export const useCamera = (options: UseCameraOptions = { autoStart: true }) => {
 
       const deviceIdToUse = targetDeviceId || selectedDeviceId;
 
-      const constraints: MediaStreamConstraints = {
-        audio: false,
-        video: deviceIdToUse
-          ? { deviceId: { exact: deviceIdToUse }, width: { ideal: 1280 }, height: { ideal: 720 } }
-          : { facingMode: options.preferredFacingMode || 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
-      };
+      // Progressive constraint strategy for maximum device compatibility
+      const constraintCandidates: MediaStreamConstraints[] = [
+        deviceIdToUse
+          ? {
+              audio: false,
+              video: { deviceId: { ideal: deviceIdToUse }, width: { ideal: 1280 }, height: { ideal: 720 } }
+            }
+          : {
+              audio: false,
+              video: { facingMode: options.preferredFacingMode || 'user', width: { ideal: 1280 }, height: { ideal: 720 } }
+            },
+        {
+          audio: false,
+          video: { facingMode: options.preferredFacingMode || 'user' }
+        },
+        {
+          audio: false,
+          video: true
+        }
+      ];
+
+      let stream: MediaStream | null = null;
+      let lastErr: any = null;
+
+      for (const constraints of constraintCandidates) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+          if (stream) break;
+        } catch (e) {
+          lastErr = e;
+          // Continue to simpler constraints
+        }
+      }
+
+      if (!stream) {
+        const err = lastErr || new Error('Unable to initialize video stream');
+        console.error('[useCamera] getUserMedia all attempts failed:', err);
+        setHasPermission(false);
+        setIsStreaming(false);
+
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          setError('Camera permission denied. Please allow camera access in browser permissions.');
+        } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+          setError('No camera hardware detected on this device.');
+        } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+          setError('Camera is currently in use by another application or OS service.');
+        } else {
+          setError(`Camera access error: ${err.message || 'Unknown error'}`);
+        }
+        return;
+      }
 
       try {
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
         streamRef.current = stream;
         setHasPermission(true);
 
@@ -138,19 +182,8 @@ export const useCamera = (options: UseCameraOptions = { autoStart: true }) => {
         // Refresh device list to capture actual labels now that permission is granted
         await refreshDevices();
       } catch (err: any) {
-        console.error('[useCamera] getUserMedia error:', err);
-        setHasPermission(false);
-        setIsStreaming(false);
-
-        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-          setError('Camera permission denied. Please allow camera access in browser permissions.');
-        } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-          setError('No camera hardware detected on this device.');
-        } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-          setError('Camera is currently in use by another application or OS service.');
-        } else {
-          setError(`Camera access error: ${err.message || 'Unknown error'}`);
-        }
+        console.error('[useCamera] Post stream setup error:', err);
+        setError(`Camera display error: ${err.message || 'Unknown'}`);
       }
     },
     [options.preferredFacingMode, refreshDevices, selectedDeviceId, stopStream]

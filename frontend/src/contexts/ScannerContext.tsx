@@ -2,7 +2,9 @@ import React, { createContext, useContext, useEffect, useState, useRef, useCallb
 import { useCamera } from '../hooks/useCamera';
 import { wsClient } from '../services/websocket';
 import { DetectedFace, CameraDeviceInfo } from '../types';
-import { startScannerSession, stopScannerSession } from '../services/api';
+import { startScannerSession, stopScannerSession, processFrameHttp } from '../services/api';
+
+export type EngineMode = 'websocket' | 'http_fallback' | 'connecting';
 
 interface ScannerContextType {
   videoRef: React.RefObject<HTMLVideoElement>;
@@ -21,6 +23,7 @@ interface ScannerContextType {
   activeTracksCount: number;
   liveFps: number;
   isWsConnected: boolean;
+  engineMode: EngineMode;
   sessionId: number;
 
   // Selected Track for registration / check-in modal
@@ -43,6 +46,7 @@ export const ScannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [activeTracksCount, setActiveTracksCount] = useState<number>(0);
   const [liveFps, setLiveFps] = useState<number>(0);
   const [isWsConnected, setIsWsConnected] = useState<boolean>(false);
+  const [engineMode, setEngineMode] = useState<EngineMode>('connecting');
   const [sessionId, setSessionId] = useState<number>(1);
 
   const [selectedTrack, setSelectedTrack] = useState<DetectedFace | null>(null);
@@ -51,6 +55,8 @@ export const ScannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const frameIntervalRef = useRef<any>(null);
   const hiddenCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const isProcessingRef = useRef<boolean>(false);
+  const lastFrameTimestampRef = useRef<number>(Date.now());
 
   // Initialize hidden canvas for frame extraction
   useEffect(() => {
@@ -63,9 +69,11 @@ export const ScannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     const unsubStatus = wsClient.onStatus((connected) => {
       setIsWsConnected(connected);
+      setEngineMode(connected ? 'websocket' : 'http_fallback');
     });
 
     const unsubMsg = wsClient.onMessage((data) => {
+      isProcessingRef.current = false;
       if (data.event === 'faces_detected') {
         setFaces(data.faces);
         setActiveTracksCount(data.active_tracks);
@@ -94,8 +102,8 @@ export const ScannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (!video || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return null;
 
     const canvas = hiddenCanvasRef.current || document.createElement('canvas');
-    // Scale down for transmission efficiency (e.g. 640x360 or 854x480)
-    const targetWidth = 640;
+    // Scale down to 480x... or 640x... for transmission speed and rapid cloud inference
+    const targetWidth = 480;
     const vWidth = video.videoWidth || 640;
     const vHeight = video.videoHeight || 360;
     const targetHeight = Math.max(120, Math.round((vHeight / vWidth) * targetWidth));
@@ -106,12 +114,12 @@ export const ScannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (!ctx) return null;
 
     ctx.drawImage(video, 0, 0, targetWidth, targetHeight);
-    return canvas.toDataURL('image/jpeg', 0.85);
+    return canvas.toDataURL('image/jpeg', 0.80);
   }, [camera.videoRef]);
 
-  // Frame sending loop over WebSocket
+  // Dual-mode frame sending loop (WebSocket with HTTP fallback)
   useEffect(() => {
-    if (!camera.isStreaming || !isWsConnected) {
+    if (!camera.isStreaming) {
       if (frameIntervalRef.current) {
         clearInterval(frameIntervalRef.current);
         frameIntervalRef.current = null;
@@ -119,13 +127,49 @@ export const ScannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return;
     }
 
-    // Send frame every 120ms (~8.3 FPS for CV inference, while local video renders at full 30-60 FPS)
-    frameIntervalRef.current = setInterval(() => {
-      const b64 = captureCurrentFrameBase64();
-      if (b64) {
-        wsClient.sendFrame(b64, sessionId, 'Browser Camera');
+    // Interval tick every 100ms
+    frameIntervalRef.current = setInterval(async () => {
+      // Flow control / backpressure check:
+      // If previous frame is still processing and less than 600ms elapsed, wait
+      const now = Date.now();
+      if (isProcessingRef.current && (now - lastFrameTimestampRef.current < 600)) {
+        return;
       }
-    }, 120);
+
+      const b64 = captureCurrentFrameBase64();
+      if (!b64) return;
+
+      isProcessingRef.current = true;
+      lastFrameTimestampRef.current = now;
+
+      if (isWsConnected) {
+        // High-speed WebSocket streaming
+        setEngineMode('websocket');
+        wsClient.sendFrame(b64, sessionId, 'Browser Camera');
+      } else {
+        // Resilient HTTP Fallback for cloud environments or proxies blocking WebSockets
+        try {
+          setEngineMode('http_fallback');
+          const resp = await processFrameHttp({
+            image: b64,
+            session_id: sessionId,
+            camera_label: 'Browser Camera Fallback'
+          });
+          if (resp && resp.faces) {
+            setFaces(resp.faces);
+            setActiveTracksCount(resp.active_tracks);
+            const dt = (Date.now() - now) / 1000;
+            if (dt > 0) {
+              setLiveFps(Math.round(1.0 / dt));
+            }
+          }
+        } catch (httpErr) {
+          console.warn('[ScannerContext] HTTP frame fallback error:', httpErr);
+        } finally {
+          isProcessingRef.current = false;
+        }
+      }
+    }, 100);
 
     return () => {
       if (frameIntervalRef.current) {
@@ -152,6 +196,7 @@ export const ScannerProvider: React.FC<{ children: React.ReactNode }> = ({ child
         activeTracksCount,
         liveFps,
         isWsConnected,
+        engineMode,
         sessionId,
         selectedTrack,
         setSelectedTrack,

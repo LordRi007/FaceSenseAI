@@ -1,6 +1,7 @@
+import asyncio
 import json
 import time
-from typing import List, Set
+from typing import List, Set, Dict
 from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
@@ -12,6 +13,7 @@ from app.computer_vision.tracker import tracker
 class ScannerWebSocketManager:
     def __init__(self):
         self.active_connections: Set[WebSocket] = set()
+        self.last_db_save_per_participant: Dict[int, float] = {}
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
@@ -23,6 +25,7 @@ class ScannerWebSocketManager:
     async def handle_stream(self, websocket: WebSocket):
         last_frame_time = time.time()
         fps = 0.0
+        loop = asyncio.get_running_loop()
 
         try:
             while True:
@@ -57,40 +60,57 @@ class ScannerWebSocketManager:
                     fps = round(1.0 / dt, 1)
                 last_frame_time = curr_time
 
-                # Process frame with Computer Vision pipeline
-                frame_bgr = vision_pipeline.decode_frame(frame_data)
+                # Offload frame decoding and computer vision processing to thread pool
+                # to prevent blocking the Uvicorn asyncio event loop
+                frame_bgr = await loop.run_in_executor(
+                    None, vision_pipeline.decode_frame, frame_data
+                )
+
                 if frame_bgr is not None:
                     detected_faces = []
                     try:
-                        detected_faces = vision_pipeline.process_frame(frame_bgr, session_id=session_id)
+                        detected_faces = await loop.run_in_executor(
+                            None, vision_pipeline.process_frame, frame_bgr, session_id
+                        )
                     except Exception as cv_err:
                         print(f"[WebSocket] Vision process error: {cv_err}")
 
                     # Persist expression events in DB for registered participants who opted in
-                    # and throttle event persistence to avoid flooding DB (e.g. 1 per second per participant)
-                    try:
-                        db: Session = SessionLocal()
-                        setting = db.query(Setting).first()
-                        save_history = setting.save_history if setting else True
+                    # Throttled to max 1 write every 3 seconds per participant
+                    if detected_faces:
+                        now = time.time()
+                        faces_to_record = [
+                            f for f in detected_faces
+                            if f.participant_id and f.expression != "Uncertain"
+                            and (now - self.last_db_save_per_participant.get(f.participant_id, 0)) >= 3.0
+                        ]
 
-                        if save_history and detected_faces:
-                            for face in detected_faces:
-                                if face.participant_id and face.expression != "Uncertain":
-                                    p = db.query(Participant).filter(Participant.id == face.participant_id).first()
-                                    if p and p.opt_in_history:
-                                        # Record expression event
-                                        event = ExpressionEvent(
-                                            participant_id=p.id,
-                                            session_id=session_id,
-                                            expression_label=face.expression,
-                                            confidence=face.confidence
-                                        )
-                                        db.add(event)
+                        if faces_to_record:
+                            try:
+                                def _save_events(records):
+                                    db: Session = SessionLocal()
+                                    try:
+                                        setting = db.query(Setting).first()
+                                        if setting and not setting.save_history:
+                                            return
+                                        for f in records:
+                                            p = db.query(Participant).filter(Participant.id == f.participant_id).first()
+                                            if p and p.opt_in_history:
+                                                event = ExpressionEvent(
+                                                    participant_id=p.id,
+                                                    session_id=session_id,
+                                                    expression_label=f.expression,
+                                                    confidence=f.confidence
+                                                )
+                                                db.add(event)
+                                                self.last_db_save_per_participant[f.participant_id] = now
                                         db.commit()
-                        db.close()
-                    except Exception as e:
-                        # Non-blocking db error in stream
-                        pass
+                                    finally:
+                                        db.close()
+
+                                await loop.run_in_executor(None, _save_events, faces_to_record)
+                            except Exception:
+                                pass
 
                     response_payload = {
                         "event": "faces_detected",

@@ -30,6 +30,11 @@ export const getScannerStatus = async () => {
   return res.data;
 };
 
+export const processFrameHttp = async (payload: { image: string; session_id?: number; camera_label?: string }) => {
+  const res = await api.post('/scanner/process-frame', payload);
+  return res.data;
+};
+
 export const startScannerSession = async (cameraLabel: string) => {
   const res = await api.post('/scanner/session', { camera_label: cameraLabel });
   return res.data;

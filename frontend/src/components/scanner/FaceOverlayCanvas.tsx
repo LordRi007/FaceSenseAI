@@ -47,16 +47,26 @@ export const FaceOverlayCanvas: React.FC<FaceOverlayCanvasProps> = ({
 
       ctx.clearRect(0, 0, displayW, displayH);
 
+      const videoW = video.videoWidth || displayW;
+      const videoH = video.videoHeight || displayH;
+
+      // Calculate object-cover transformation to match browser video rendering
+      const scale = Math.max(displayW / videoW, displayH / videoH);
+      const renderedW = videoW * scale;
+      const renderedH = videoH * scale;
+      const offsetX = (displayW - renderedW) / 2;
+      const offsetY = (displayH - renderedH) / 2;
+
       faces.forEach((face) => {
         const { bounding_box, expression, confidence, session_tracking_id, participant_code, display_name } = face;
         const colorSet = EMOTION_COLORS[expression] || EMOTION_COLORS.Neutral;
         const emoji = EMOTION_EMOJIS[expression] || '😐';
 
-        // Bounding box coordinates normalized (0.0 to 1.0)
-        let boxX = bounding_box.x * displayW;
-        const boxY = bounding_box.y * displayH;
-        const boxW = bounding_box.width * displayW;
-        const boxH = bounding_box.height * displayH;
+        // Precise coordinates projected through object-cover scale & offset
+        let boxX = offsetX + (bounding_box.x * renderedW);
+        const boxY = offsetY + (bounding_box.y * renderedH);
+        const boxW = bounding_box.width * renderedW;
+        const boxH = bounding_box.height * renderedH;
 
         // If mirrored (front-facing camera), flip horizontal coordinate
         if (isMirrored) {

@@ -1,14 +1,29 @@
 from datetime import datetime, timezone
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import Dict, Any
+from typing import Dict, Any, List
+from pydantic import BaseModel
 
 from app.database.session import get_db
 from app.models.database import CameraSession
-from app.schemas.schemas import CameraSessionCreate, CameraSessionResponse
+from app.schemas.schemas import CameraSessionCreate, CameraSessionResponse, DetectedFace
 from app.computer_vision.tracker import tracker
+from app.computer_vision.detector import vision_pipeline
 
 router = APIRouter(prefix="/scanner", tags=["Scanner"])
+
+class FrameProcessRequest(BaseModel):
+    image: str
+    session_id: int = 1
+    camera_label: str = "Browser Camera"
+
+class FrameProcessResponse(BaseModel):
+    event: str
+    timestamp: str
+    fps: float
+    active_tracks: int
+    faces: List[DetectedFace]
 
 @router.get("/status")
 def get_scanner_status(db: Session = Depends(get_db)) -> Dict[str, Any]:
@@ -30,6 +45,37 @@ def get_scanner_status(db: Session = Depends(get_db)) -> Dict[str, Any]:
         ],
         "system_status": "Ready"
     }
+
+@router.post("/process-frame", response_model=FrameProcessResponse)
+async def process_frame_http(req: FrameProcessRequest):
+    """
+    HTTP Fallback for face detection and expression classification.
+    Ensures 100% reliable functionality when WebSockets are blocked by proxies,
+    firewalls, or cloud container constraints.
+    """
+    frame_bgr = vision_pipeline.decode_frame(req.image)
+    if frame_bgr is None:
+        return FrameProcessResponse(
+            event="frame_error",
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            fps=0.0,
+            active_tracks=len(tracker.tracks),
+            faces=[]
+        )
+
+    # Run heavy CV pipeline in thread pool to prevent blocking event loop
+    loop = asyncio.get_running_loop()
+    detected_faces = await loop.run_in_executor(
+        None, vision_pipeline.process_frame, frame_bgr, req.session_id
+    )
+
+    return FrameProcessResponse(
+        event="faces_detected",
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        fps=10.0,
+        active_tracks=len(tracker.tracks),
+        faces=detected_faces
+    )
 
 @router.post("/session", response_model=CameraSessionResponse)
 def start_session(data: CameraSessionCreate, db: Session = Depends(get_db)):

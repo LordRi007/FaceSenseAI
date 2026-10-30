@@ -27,6 +27,7 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ isMirrored = true }) => 
     faces,
     activeTracksCount,
     isWsConnected,
+    engineMode,
     startCamera,
   } = useScanner();
 
@@ -46,7 +47,7 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ isMirrored = true }) => 
   return (
     <div
       ref={containerRef}
-      className="relative w-full aspect-video md:aspect-[16/10] bg-slate-950 rounded-2xl overflow-hidden shadow-2xl border border-slate-200 dark:border-slate-800 flex items-center justify-center group"
+      className="relative w-full aspect-[4/3] sm:aspect-video lg:aspect-[16/10] max-h-[70vh] bg-slate-950 rounded-2xl overflow-hidden shadow-2xl border border-slate-200 dark:border-slate-800 flex items-center justify-center group"
     >
       {/* Real Hardware Video Element */}
       <video
@@ -70,26 +71,29 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ isMirrored = true }) => 
 
       {/* Top Floating Telemetry Overlay */}
       {isStreaming && (
-        <div className="absolute top-4 left-4 right-4 z-20 flex items-center justify-between pointer-events-none">
-          <div className="flex items-center gap-2">
+        <div className="absolute top-3 left-3 right-3 sm:top-4 sm:left-4 sm:right-4 z-20 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             {/* Live Indicator */}
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900/80 backdrop-blur-md border border-slate-700/60 text-xs font-medium text-white shadow-lg pointer-events-auto">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
-              <span>SCANNING LIVE</span>
+            <div className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 rounded-full bg-slate-900/80 backdrop-blur-md border border-slate-700/60 text-[11px] sm:text-xs font-medium text-white shadow-lg pointer-events-auto">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              <span>LIVE</span>
             </div>
 
             {/* AI Engine Status */}
-            <div className={`hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full backdrop-blur-md border text-xs font-medium shadow-lg pointer-events-auto ${
-              isWsConnected
+            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full backdrop-blur-md border text-[11px] sm:text-xs font-medium shadow-lg pointer-events-auto ${
+              engineMode === 'websocket'
                 ? 'bg-slate-900/80 border-slate-700/60 text-emerald-400'
-                : 'bg-rose-950/80 border-rose-700/60 text-rose-300'
+                : engineMode === 'http_fallback'
+                ? 'bg-slate-900/80 border-cyan-700/60 text-cyan-400'
+                : 'bg-amber-950/80 border-amber-700/60 text-amber-300'
             }`}>
-              <span className={`w-2 h-2 rounded-full ${isWsConnected ? 'bg-emerald-400' : 'bg-rose-400 animate-ping'}`} />
-              <span>{isWsConnected ? 'AI Engine Online' : 'AI Engine Connecting...'}</span>
+              <span className={`w-2 h-2 rounded-full ${engineMode === 'websocket' ? 'bg-emerald-400' : engineMode === 'http_fallback' ? 'bg-cyan-400' : 'bg-amber-400 animate-ping'}`} />
+              <span className="hidden xs:inline">{engineMode === 'websocket' ? 'AI: WebSocket' : engineMode === 'http_fallback' ? 'AI: HTTP Online' : 'Connecting AI...'}</span>
+              <span className="xs:hidden">{engineMode === 'websocket' ? 'WS' : engineMode === 'http_fallback' ? 'HTTP' : 'Wait'}</span>
             </div>
 
             {/* FPS & Resolution */}
-            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900/80 backdrop-blur-md border border-slate-700/60 text-xs font-mono text-cyan-300 shadow-lg pointer-events-auto">
+            <div className="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900/80 backdrop-blur-md border border-slate-700/60 text-xs font-mono text-cyan-300 shadow-lg pointer-events-auto">
               <Activity className="w-3.5 h-3.5 text-cyan-400" />
               <span>{liveFps} FPS</span>
               <span className="text-slate-500">•</span>
@@ -97,20 +101,20 @@ export const CameraFeed: React.FC<CameraFeedProps> = ({ isMirrored = true }) => 
             </div>
           </div>
 
-          <div className="flex items-center gap-2 pointer-events-auto">
+          <div className="flex items-center gap-1.5 sm:gap-2 pointer-events-auto">
             {/* Active Faces Pill */}
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900/80 backdrop-blur-md border border-slate-700/60 text-xs font-medium text-amber-300 shadow-lg">
-              <Eye className="w-3.5 h-3.5 text-amber-400" />
-              <span>{faces.length} {faces.length === 1 ? 'Face Detected' : 'Faces Detected'}</span>
+            <div className="flex items-center gap-1 px-2.5 py-1 sm:px-3 rounded-full bg-slate-900/80 backdrop-blur-md border border-slate-700/60 text-[11px] sm:text-xs font-medium text-amber-300 shadow-lg">
+              <Eye className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400" />
+              <span>{faces.length} {faces.length === 1 ? 'Face' : 'Faces'}</span>
             </div>
 
             {/* Fullscreen Button */}
             <button
               onClick={toggleFullscreen}
-              className="p-1.5 rounded-full bg-slate-900/80 hover:bg-slate-800 backdrop-blur-md border border-slate-700/60 text-slate-300 hover:text-white transition-colors"
+              className="p-1 sm:p-1.5 rounded-full bg-slate-900/80 hover:bg-slate-800 backdrop-blur-md border border-slate-700/60 text-slate-300 hover:text-white transition-colors"
               title="Toggle Fullscreen"
             >
-              <Maximize2 className="w-4 h-4" />
+              <Maximize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </button>
           </div>
         </div>
